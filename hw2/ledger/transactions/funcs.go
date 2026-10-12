@@ -10,8 +10,8 @@ var transactions = []Transaction{}
 var ErrNonPositiveAmount = errors.New("amount must be positive")
 
 func AddTransaction(tx Transaction) error {
-	if tx.Amount <= 0 {
-		return ErrNonPositiveAmount
+	if err := tx.Validate(); err != nil {
+		return fmt.Errorf("invalid transaction: %w", err)
 	}
 	if b, ok := budgets[tx.Category]; ok {
 		spent := spentInCategory(tx.Category)

@@ -11,8 +11,34 @@ import (
 func main() {
 	fmt.Println("Ledger service started")
 
-	transactions.SetBudget(transactions.Budget{Category: "food", Limit: 3000})
-	transactions.SetBudget(transactions.Budget{Category: "transport", Limit: 3000})
+	fmt.Println("--- CheckValid demo ---")
+	checks := []transactions.Validatable{
+		transactions.Transaction{Amount: 100, Category: "food", Date: time.Now()},
+		transactions.Transaction{Amount: -50, Category: "food", Date: time.Now()},
+		transactions.Transaction{Amount: 100, Category: "", Date: time.Now()},
+		transactions.Transaction{Amount: 100, Category: "food"},
+		transactions.Budget{Category: "food", Limit: 1000},
+		transactions.Budget{Category: "food", Limit: 0},
+		transactions.Budget{Category: "", Limit: 1000},
+	}
+	for _, v := range checks {
+		if err := transactions.CheckValid(v); err != nil {
+			fmt.Printf("invalid %T %+v: %v\n", v, v, err)
+			continue
+		}
+		fmt.Printf("valid   %T %+v\n", v, v)
+	}
+	fmt.Println("------------------------")
+
+	for _, b := range []transactions.Budget{
+		{Category: "food", Limit: 3000},
+		{Category: "transport", Limit: 3000},
+		{Category: "", Limit: 500},
+	} {
+		if err := transactions.SetBudget(b); err != nil {
+			fmt.Printf("budget rejected: %+v: %v\n", b, err)
+		}
+	}
 
 	if err := loadBudgetsFromFile("budgets.json"); err != nil {
 		fmt.Println("error:", err)
@@ -32,11 +58,13 @@ func main() {
 		fmt.Printf("accepted: %s %d (%s)\n", category, amount, description)
 	}
 
-	add(1500, "food", "groceries")     // within limit
-	add(3500, "food", "restaurant")    // exactly reaches the limit 5000
-	add(1, "food", "gum")              // exceeds the limit
-	add(3500, "transport", "taxi")     // exceeds the limit at once
-	add(10000, "rent", "monthly rent") // no budget for category
+	add(1500, "food", "groceries")
+	add(3500, "food", "restaurant")
+	add(1, "food", "gum")
+	add(3500, "transport", "taxi")
+	add(10000, "rent", "monthly rent")
+	add(0, "food", "free sample")
+	add(200, "", "unknown")
 
 	for _, tx := range transactions.ListTransactions() {
 		fmt.Printf("#%d %s %d (%s) %s\n",

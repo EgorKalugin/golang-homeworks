@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func reset() {
@@ -33,7 +34,7 @@ func TestAddTransactionBudget(t *testing.T) {
 
 			accepted := 0
 			for i, amount := range tt.amounts {
-				err := AddTransaction(Transaction{Amount: amount, Category: "food"})
+				err := AddTransaction(Transaction{Amount: amount, Category: "food", Date: time.Now()})
 				if tt.wantErr[i] {
 					if !errors.Is(err, ErrBudgetExceeded) {
 						t.Fatalf("tx %d: want ErrBudgetExceeded, got %v", i, err)
@@ -56,12 +57,12 @@ func TestAddTransactionBudget(t *testing.T) {
 func TestSetBudgetUpdatesLimit(t *testing.T) {
 	reset()
 	SetBudget(Budget{"food", 1000})
-	if err := AddTransaction(Transaction{Amount: 1500, Category: "food"}); !errors.Is(err, ErrBudgetExceeded) {
+	if err := AddTransaction(Transaction{Amount: 1500, Category: "food", Date: time.Now()}); !errors.Is(err, ErrBudgetExceeded) {
 		t.Fatalf("want ErrBudgetExceeded, got %v", err)
 	}
 
 	SetBudget(Budget{"food", 2000})
-	if err := AddTransaction(Transaction{Amount: 1500, Category: "food"}); err != nil {
+	if err := AddTransaction(Transaction{Amount: 1500, Category: "food", Date: time.Now()}); err != nil {
 		t.Fatalf("unexpected error after raising limit: %v", err)
 	}
 }
@@ -80,7 +81,7 @@ func TestLoadBudgets(t *testing.T) {
 		},
 		{name: "broken json", input: `[{"category":"food",`, wantErr: "decode json"},
 		{name: "not an array", input: `{"category":"food","limit":5000}`, wantErr: "decode json"},
-		{name: "empty category", input: `[{"category":"food","limit":1},{"category":"","limit":5}]`, wantErr: "item 1: empty category"},
+		{name: "empty category", input: `[{"category":"food","limit":1},{"category":"","limit":5}]`, wantErr: "item 1: category must not be empty"},
 		{name: "non-positive limit", input: `[{"category":"food","limit":0}]`, wantErr: "limit must be positive"},
 	}
 

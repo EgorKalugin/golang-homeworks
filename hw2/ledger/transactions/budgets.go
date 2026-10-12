@@ -16,8 +16,12 @@ var budgets = map[string]Budget{}
 
 var ErrBudgetExceeded = errors.New("budget exceeded")
 
-func SetBudget(b Budget) {
+func SetBudget(b Budget) error {
+	if err := b.Validate(); err != nil {
+		return fmt.Errorf("invalid budget: %w", err)
+	}
 	budgets[b.Category] = b
+	return nil
 }
 
 func LoadBudgets(r io.Reader) error {
@@ -27,16 +31,13 @@ func LoadBudgets(r io.Reader) error {
 	}
 
 	for i, b := range loaded {
-		if b.Category == "" {
-			return fmt.Errorf("load budgets: item %d: empty category", i)
-		}
-		if b.Limit <= 0 {
-			return fmt.Errorf("load budgets: item %d (%q): limit must be positive, got %d", i, b.Category, b.Limit)
+		if err := b.Validate(); err != nil {
+			return fmt.Errorf("load budgets: item %d: %w", i, err)
 		}
 	}
 
 	for _, b := range loaded {
-		SetBudget(b)
+		budgets[b.Category] = b
 	}
 	return nil
 }
