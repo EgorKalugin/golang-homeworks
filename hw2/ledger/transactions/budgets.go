@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 )
 
 type Budget struct {
@@ -22,6 +23,15 @@ func SetBudget(b Budget) error {
 	}
 	budgets[b.Category] = b
 	return nil
+}
+
+func ListBudgets() []Budget {
+	list := make([]Budget, 0, len(budgets))
+	for _, b := range budgets {
+		list = append(list, b)
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Category < list[j].Category })
+	return list
 }
 
 func LoadBudgets(r io.Reader) error {

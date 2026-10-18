@@ -1,23 +1,17 @@
 package main
 
 import (
-	"fmt"
+	"gateway/internal/api"
 	"log"
 	"net/http"
 )
 
-func ping(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte("pong"))
-}
-
 func main() {
-	fmt.Println("Gateway service started")
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: api.NewRouter(api.NewHandlers()),
+	}
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /ping", ping)
-
-
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Printf("Gateway service started on %s", srv.Addr)
+	log.Fatal(srv.ListenAndServe())
 }
