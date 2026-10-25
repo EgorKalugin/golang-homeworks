@@ -73,7 +73,30 @@ List transactions:
 curl http://localhost:8080/api/transactions
 ```
 
-Run tests:
+## Tests
+
+- `ledger/transactions/ledger_test.go` — unit tests for the domain: table-driven
+  `Transaction.Validate()` / `Budget.Validate()` (parallel) and the budget flow
+  (`SetBudget` → `AddTransaction` within/over limit → `ListTransactions`).
+- `gateway/internal/api/handlers_test.go` — HTTP integration tests via `httptest`
+  (`POST/GET /api/budgets`, `POST/GET /api/transactions`, 400/409/404/405 mapping,
+  `Content-Type` header). Subtests: `ok`, `list`, `exceeded`, `bad_json`, ...
+
+Ledger keeps data in memory, so `transactions.Reset()` clears transactions and
+budgets; stateful tests call it at start and in `t.Cleanup()` and are not parallel.
+
+Run tests with coverage (in each module, `ledger` and `gateway`):
 ```
-cd gateway && go test ./...
+cd ledger   # or: cd gateway
+go test ./... -cover -coverprofile=cover.out
+go tool cover -html=cover.out -o cover.html
 ```
+
+Coverage:
+
+| Package                | Coverage |
+|------------------------|----------|
+| `ledger/transactions`  | ~96%     |
+| `gateway/internal/api` | ~96%     |
+| `ledger` module total  | ~47% (`main.go` demo is not tested) |
+| `gateway` module total | ~93%     |

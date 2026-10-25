@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-func reset() {
-	transactions = []Transaction{}
-	budgets = map[string]Budget{}
-}
-
 func TestAddTransactionBudget(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -27,7 +22,7 @@ func TestAddTransactionBudget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reset()
+			Reset()
 			if tt.budget != nil {
 				SetBudget(*tt.budget)
 			}
@@ -55,7 +50,7 @@ func TestAddTransactionBudget(t *testing.T) {
 }
 
 func TestSetBudgetUpdatesLimit(t *testing.T) {
-	reset()
+	Reset()
 	SetBudget(Budget{"food", 1000})
 	if err := AddTransaction(Transaction{Amount: 1500, Category: "food", Date: time.Now()}); !errors.Is(err, ErrBudgetExceeded) {
 		t.Fatalf("want ErrBudgetExceeded, got %v", err)
@@ -87,7 +82,7 @@ func TestLoadBudgets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reset()
+			Reset()
 			err := LoadBudgets(strings.NewReader(tt.input))
 
 			if tt.wantErr != "" {

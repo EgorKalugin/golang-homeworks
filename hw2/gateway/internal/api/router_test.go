@@ -1,6 +1,7 @@
 package api
 
 import (
+	"ledger/transactions"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,8 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 }
 
 func TestAPI(t *testing.T) {
+	transactions.Reset()
+	t.Cleanup(transactions.Reset)
 	h := NewRouter(NewHandlers())
 
 	steps := []struct {

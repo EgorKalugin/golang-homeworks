@@ -41,7 +41,7 @@ func TestCheckValid(t *testing.T) {
 }
 
 func TestAddRejectsInvalid(t *testing.T) {
-	reset()
+	Reset()
 	if err := AddTransaction(Transaction{Amount: 100, Date: time.Now()}); !errors.Is(err, ErrEmptyCategory) {
 		t.Fatalf("want ErrEmptyCategory, got %v", err)
 	}
