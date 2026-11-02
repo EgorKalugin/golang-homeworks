@@ -13,6 +13,9 @@ func NewRouter(h *Handlers) http.Handler {
 	api.HandleFunc("GET /budgets", h.ListBudgets)
 	api.HandleFunc("/budgets", methodNotAllowed)
 
+	api.HandleFunc("GET /reports/summary", h.ReportSummary)
+	api.HandleFunc("/reports/summary", methodNotAllowed)
+
 	api.HandleFunc("/", notFound)
 
 	root := http.NewServeMux()

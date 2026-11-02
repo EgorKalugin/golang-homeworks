@@ -68,70 +68,69 @@ func TestBudgetValidate(t *testing.T) {
 	}
 }
 
-// TestBudgetFlow touches package-level state, so it is not parallel.
 func TestBudgetFlow(t *testing.T) {
 	date := time.Date(2025, 9, 10, 0, 0, 0, 0, time.UTC)
 
 	t.Run("within limit then exceeded", func(t *testing.T) {
-		Reset()
-		t.Cleanup(Reset)
+		withDB(t)
 
 		require.NoError(t, SetBudget(Budget{Category: "еда", Limit: 5000}))
 
 		err := AddTransaction(Transaction{Amount: 3000, Category: "еда", Date: date})
 		require.NoError(t, err)
-		require.Len(t, ListTransactions(), 1)
+		require.Len(t, mustList(t), 1)
 
 		err = AddTransaction(Transaction{Amount: 2500, Category: "еда", Date: date})
 		assert.ErrorIs(t, err, ErrBudgetExceeded)
 		assert.ErrorContains(t, err, "budget exceeded")
-		assert.Len(t, ListTransactions(), 1, "rejected transaction must not be stored")
+		assert.Len(t, mustList(t), 1, "rejected transaction must not be stored")
 	})
 
 	t.Run("exactly at limit", func(t *testing.T) {
-		Reset()
-		t.Cleanup(Reset)
+		withDB(t)
 
 		require.NoError(t, SetBudget(Budget{Category: "еда", Limit: 5000}))
 		assert.NoError(t, AddTransaction(Transaction{Amount: 5000, Category: "еда", Date: date}))
 		assert.ErrorIs(t, AddTransaction(Transaction{Amount: 1, Category: "еда", Date: date}), ErrBudgetExceeded)
-		assert.Len(t, ListTransactions(), 1)
+		assert.Len(t, mustList(t), 1)
 	})
 
 	t.Run("other category is not limited", func(t *testing.T) {
-		Reset()
-		t.Cleanup(Reset)
+		withDB(t)
 
 		require.NoError(t, SetBudget(Budget{Category: "еда", Limit: 5000}))
 		assert.NoError(t, AddTransaction(Transaction{Amount: 10000, Category: "транспорт", Date: date}))
-		assert.Len(t, ListTransactions(), 1)
+		assert.Len(t, mustList(t), 1)
 	})
 
 	t.Run("invalid budget is rejected", func(t *testing.T) {
-		Reset()
-		t.Cleanup(Reset)
+		withDB(t)
 
 		assert.ErrorIs(t, SetBudget(Budget{Category: "еда", Limit: 0}), ErrNonPositiveLimit)
-		assert.Empty(t, ListBudgets())
+		assert.Empty(t, mustBudgets(t))
 	})
 
-	t.Run("ids are sequential", func(t *testing.T) {
-		Reset()
-		t.Cleanup(Reset)
+	t.Run("ids are generated and list is newest first", func(t *testing.T) {
+		withDB(t)
 
-		require.NoError(t, AddTransaction(Transaction{Amount: 1, Category: "еда", Date: date}))
-		require.NoError(t, AddTransaction(Transaction{Amount: 2, Category: "еда", Date: date}))
-		txs := ListTransactions()
-		require.Len(t, txs, 2)
-		assert.Equal(t, 1, txs[0].ID)
-		assert.Equal(t, 2, txs[1].ID)
+		first, err := CreateTransaction(Transaction{Amount: 1, Category: "еда", Description: "чай", Date: date})
+		require.NoError(t, err)
+		assert.Equal(t, 1, first.ID)
+		second, err := CreateTransaction(Transaction{Amount: 2, Category: "еда", Date: date})
+		require.NoError(t, err)
+		assert.Equal(t, 2, second.ID)
+		older, err := CreateTransaction(Transaction{Amount: 3, Category: "еда", Date: date.AddDate(0, 0, -1)})
+		require.NoError(t, err)
+
+		assert.Equal(t, []Transaction{second, first, older}, mustList(t))
 	})
 
 	t.Run("reset clears state", func(t *testing.T) {
+		withDB(t)
 		require.NoError(t, SetBudget(Budget{Category: "еда", Limit: 1}))
 		require.NoError(t, AddTransaction(Transaction{Amount: 1, Category: "еда", Date: date}))
 		Reset()
-		assert.Empty(t, ListTransactions())
-		assert.Empty(t, ListBudgets())
+		assert.Empty(t, mustList(t))
+		assert.Empty(t, mustBudgets(t))
 	})
 }

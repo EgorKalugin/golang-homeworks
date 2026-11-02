@@ -33,12 +33,22 @@ type BudgetResponse struct {
 	Limit    int    `json:"limit"`
 }
 
+type CategoryTotalResponse struct {
+	Category string `json:"category"`
+	Total    int    `json:"total"`
+}
+
+type ReportSummaryResponse struct {
+	From       string                  `json:"from"`
+	To         string                  `json:"to"`
+	Total      int                     `json:"total"`
+	Categories []CategoryTotalResponse `json:"categories"`
+}
+
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// ToTransaction converts the request into a domain transaction.
-// An empty date is left as zero time so that tx.Validate() reports it.
 func (r CreateTransactionRequest) ToTransaction() (transactions.Transaction, error) {
 	tx := transactions.Transaction{
 		Amount:      r.Amount,
@@ -91,6 +101,19 @@ func NewBudgetResponses(bs []transactions.Budget) []BudgetResponse {
 	resp := make([]BudgetResponse, 0, len(bs))
 	for _, b := range bs {
 		resp = append(resp, NewBudgetResponse(b))
+	}
+	return resp
+}
+
+func NewReportSummaryResponse(s transactions.ReportSummary) ReportSummaryResponse {
+	resp := ReportSummaryResponse{
+		From:       s.From,
+		To:         s.To,
+		Total:      s.Total,
+		Categories: make([]CategoryTotalResponse, 0, len(s.Categories)),
+	}
+	for _, c := range s.Categories {
+		resp.Categories = append(resp.Categories, CategoryTotalResponse{Category: c.Category, Total: c.Total})
 	}
 	return resp
 }

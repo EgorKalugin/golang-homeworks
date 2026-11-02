@@ -1,102 +1,25 @@
-run gateway:
+# CashCraft
+
+- [`ledger/`](ledger/README.md): domain logic and storage. Data is stored in PostgreSQL
+  (Goose migrations in `ledger/migrations/`), reports are cached in Redis for 30s.
+- [`gateway/`](gateway/README.md): HTTP API on `:8080`. Same endpoints as before; it calls
+  Ledger, which now keeps data in PostgreSQL instead of memory, so data survives restarts.
+
+## Quick start
+
 ```
-cd gateway
-go run main.go
-```
+docker run -d --name cashcraft-pg -p 5432:5432 \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=cashapp postgres:17-alpine
+docker run -d --name cashcraft-redis -p 6379:6379 redis:7-alpine
 
-run ledger:
-```
-cd ledger
-go run main.go
-```
+export DATABASE_URL="postgres://postgres:postgres@localhost:5432/cashapp?sslmode=disable"
+export REDIS_ADDR=localhost:6379 REDIS_DB=0
 
-## Gateway HTTP API
+goose -dir ./ledger/migrations postgres "$DATABASE_URL" up     # roll back: ... down
 
-Gateway imports the `ledger` module (via `replace ledger => ../ledger` in `gateway/go.mod`)
-and listens on `:8080`. Storage is in memory, so data is lost on restart.
-
-All responses use `Content-Type: application/json; charset=utf-8`.
-Errors have the form `{"error":"..."}`. Every request is logged to the console
-as method, path and duration.
-
-| Method | Path                | Body                                                      | Success            |
-|--------|---------------------|-----------------------------------------------------------|--------------------|
-| POST   | `/api/transactions` | `{"amount","category","description","date":"YYYY-MM-DD"}` | `201` transaction  |
-| GET    | `/api/transactions` | —                                                         | `200` array (`[]` if empty) |
-| POST   | `/api/budgets`      | `{"category","limit"}` (creates or updates)               | `201` budget       |
-| GET    | `/api/budgets`      | —                                                         | `200` array (`[]` if empty) |
-
-Error statuses:
-
-- `400 Bad Request` — invalid JSON or failed validation (`amount <= 0`, empty category, missing/invalid date, `limit <= 0`);
-- `409 Conflict` — the transaction exceeds the category budget (`{"error":"budget exceeded"}`);
-- `500 Internal Server Error` — any other unexpected error;
-- `404` / `405` — unknown path / unsupported method.
-
-### cURL examples
-
-Create a budget:
-```
-curl -X POST http://localhost:8080/api/budgets \
-  -H "Content-Type: application/json" \
-  -d '{"category":"еда","limit":1000}'
+(cd ledger && go run .)     # checks the DB connection and prints stored data
+(cd gateway && go run .)    # HTTP API on :8080
 ```
 
-List budgets:
-```
-curl http://localhost:8080/api/budgets
-```
-
-Create a transaction:
-```
-curl -X POST http://localhost:8080/api/transactions \
-  -H "Content-Type: application/json" \
-  -d '{"amount":450,"category":"еда","description":"ланч","date":"2025-09-10"}'
-```
-
-Exceed the budget (returns `409`):
-```
-curl -i -X POST http://localhost:8080/api/transactions \
-  -H "Content-Type: application/json" \
-  -d '{"amount":600,"category":"еда","description":"ужин","date":"2025-09-11"}'
-```
-
-Validation error (returns `400`):
-```
-curl -i -X POST http://localhost:8080/api/transactions \
-  -H "Content-Type: application/json" \
-  -d '{"amount":-5,"category":"еда","date":"2025-09-10"}'
-```
-
-List transactions:
-```
-curl http://localhost:8080/api/transactions
-```
-
-## Tests
-
-- `ledger/transactions/ledger_test.go` — unit tests for the domain: table-driven
-  `Transaction.Validate()` / `Budget.Validate()` (parallel) and the budget flow
-  (`SetBudget` → `AddTransaction` within/over limit → `ListTransactions`).
-- `gateway/internal/api/handlers_test.go` — HTTP integration tests via `httptest`
-  (`POST/GET /api/budgets`, `POST/GET /api/transactions`, 400/409/404/405 mapping,
-  `Content-Type` header). Subtests: `ok`, `list`, `exceeded`, `bad_json`, ...
-
-Ledger keeps data in memory, so `transactions.Reset()` clears transactions and
-budgets; stateful tests call it at start and in `t.Cleanup()` and are not parallel.
-
-Run tests with coverage (in each module, `ledger` and `gateway`):
-```
-cd ledger   # or: cd gateway
-go test ./... -cover -coverprofile=cover.out
-go tool cover -html=cover.out -o cover.html
-```
-
-Coverage:
-
-| Package                | Coverage |
-|------------------------|----------|
-| `ledger/transactions`  | ~96%     |
-| `gateway/internal/api` | ~96%     |
-| `ledger` module total  | ~47% (`main.go` demo is not tested) |
-| `gateway` module total | ~93%     |
+Environment variables, migrations, cURL examples and tests are described in
+[ledger/README.md](ledger/README.md) and [gateway/README.md](gateway/README.md).

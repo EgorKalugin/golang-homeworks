@@ -2,14 +2,27 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"flag"
 	"fmt"
 	"ledger/transactions"
+	"log"
 	"os"
 	"time"
 )
 
 func main() {
-	fmt.Println("Ledger service started")
+	budgetsFile := flag.String("budgets", "", "JSON file with budgets to upsert on start (e.g. budgets.json)")
+	flag.Parse()
+
+	ctx := context.Background()
+	if err := transactions.Init(ctx); err != nil {
+		log.Fatalf("ledger: cannot start: %v\n"+
+			"check that PostgreSQL is running, DATABASE_URL (or DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME) is correct "+
+			"and migrations are applied: goose -dir ./migrations postgres \"$DATABASE_URL\" up", err)
+	}
+	defer transactions.Close()
+	log.Println("Ledger service started")
 
 	fmt.Println("--- CheckValid demo ---")
 	checks := []transactions.Validatable{
@@ -30,44 +43,29 @@ func main() {
 	}
 	fmt.Println("------------------------")
 
-	for _, b := range []transactions.Budget{
-		{Category: "food", Limit: 3000},
-		{Category: "transport", Limit: 3000},
-		{Category: "", Limit: 500},
-	} {
-		if err := transactions.SetBudget(b); err != nil {
-			fmt.Printf("budget rejected: %+v: %v\n", b, err)
+	if *budgetsFile != "" {
+		if err := loadBudgetsFromFile(*budgetsFile); err != nil {
+			log.Fatalf("ledger: %v", err)
 		}
+		log.Printf("budgets loaded from %s", *budgetsFile)
 	}
 
-	if err := loadBudgetsFromFile("budgets.json"); err != nil {
-		fmt.Println("error:", err)
+	budgets, err := transactions.ListBudgets()
+	if err != nil {
+		log.Fatalf("ledger: %v", err)
+	}
+	fmt.Printf("budgets in database: %d\n", len(budgets))
+	for _, b := range budgets {
+		fmt.Printf("  %s: %d\n", b.Category, b.Limit)
 	}
 
-	add := func(amount int, category, description string) {
-		err := transactions.AddTransaction(transactions.Transaction{
-			Amount:      amount,
-			Category:    category,
-			Description: description,
-			Date:        time.Now(),
-		})
-		if err != nil {
-			fmt.Printf("rejected: %s %d (%s): %v\n", category, amount, description, err)
-			return
-		}
-		fmt.Printf("accepted: %s %d (%s)\n", category, amount, description)
+	txs, err := transactions.ListTransactions()
+	if err != nil {
+		log.Fatalf("ledger: %v", err)
 	}
-
-	add(1500, "food", "groceries")
-	add(3500, "food", "restaurant")
-	add(1, "food", "gum")
-	add(3500, "transport", "taxi")
-	add(10000, "rent", "monthly rent")
-	add(0, "food", "free sample")
-	add(200, "", "unknown")
-
-	for _, tx := range transactions.ListTransactions() {
-		fmt.Printf("#%d %s %d (%s) %s\n",
+	fmt.Printf("transactions in database: %d\n", len(txs))
+	for _, tx := range txs {
+		fmt.Printf("  #%d %s %d (%s) %s\n",
 			tx.ID, tx.Category, tx.Amount, tx.Description, tx.Date.Format("2006-01-02"))
 	}
 }

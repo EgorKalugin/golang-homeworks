@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"ledger/transactions"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,8 +13,7 @@ import (
 
 func newTestRouter(t *testing.T) http.Handler {
 	t.Helper()
-	transactions.Reset()
-	t.Cleanup(transactions.Reset)
+	resetStorage(t)
 	return NewRouter(NewHandlers())
 }
 
@@ -97,7 +95,6 @@ func TestTransactionsAPI(t *testing.T) {
 	const validTx = `{"amount":3000,"category":"еда","description":"продукты","date":"2025-09-10"}`
 	wantTx := TransactionResponse{ID: 1, Amount: 3000, Category: "еда", Description: "продукты", Date: "2025-09-10"}
 
-	// withBudget prepares a router with a 5000 budget for "еда" created via the API.
 	withBudget := func(t *testing.T) http.Handler {
 		t.Helper()
 		h := newTestRouter(t)
@@ -171,6 +168,47 @@ func TestTransactionsAPI(t *testing.T) {
 	}
 }
 
+func TestReportSummaryAPI(t *testing.T) {
+	h := newTestRouter(t)
+	for _, body := range []string{
+		`{"amount":300,"category":"еда","date":"2025-09-01"}`,
+		`{"amount":150,"category":"еда","date":"2025-09-10"}`,
+		`{"amount":70,"category":"транспорт","date":"2025-09-05"}`,
+		`{"amount":999,"category":"еда","date":"2025-10-01"}`,
+	} {
+		require.Equal(t, http.StatusCreated, send(t, h, http.MethodPost, "/api/transactions", body).Code)
+	}
+
+	const wantSummary = `{"from":"2025-09-01","to":"2025-09-30","total":520,
+		"categories":[{"category":"еда","total":450},{"category":"транспорт","total":70}]}`
+
+	rec := send(t, h, http.MethodGet, "/api/reports/summary?from=2025-09-01&to=2025-09-30", "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, wantSummary, rec.Body.String())
+
+	rec = send(t, h, http.MethodGet, "/api/reports/summary?from=2025-09-01&to=2025-09-30", "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, wantSummary, rec.Body.String(), "repeated request returns the same summary")
+
+	badRequests := []struct {
+		name    string
+		query   string
+		wantErr string
+	}{
+		{"missing_from", "?to=2025-09-30", `"from" is required`},
+		{"missing_to", "?from=2025-09-01", `"to" is required`},
+		{"bad_date", "?from=01.09.2025&to=2025-09-30", "YYYY-MM-DD"},
+		{"reversed_period", "?from=2025-09-30&to=2025-09-01", "from must not be after to"},
+	}
+	for _, tt := range badRequests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := send(t, h, http.MethodGet, "/api/reports/summary"+tt.query, "")
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Contains(t, decode[ErrorResponse](t, rec).Error, tt.wantErr)
+		})
+	}
+}
+
 func TestRouting(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -181,6 +219,7 @@ func TestRouting(t *testing.T) {
 	}{
 		{"method_not_allowed_transactions", http.MethodDelete, "/api/transactions", http.StatusMethodNotAllowed, `{"error":"method not allowed"}`},
 		{"method_not_allowed_budgets", http.MethodPut, "/api/budgets", http.StatusMethodNotAllowed, `{"error":"method not allowed"}`},
+		{"method_not_allowed_reports", http.MethodPost, "/api/reports/summary", http.StatusMethodNotAllowed, `{"error":"method not allowed"}`},
 		{"unknown_api_path", http.MethodGet, "/api/unknown", http.StatusNotFound, `{"error":"not found"}`},
 		{"unknown_root_path", http.MethodGet, "/health", http.StatusNotFound, `{"error":"not found"}`},
 	}

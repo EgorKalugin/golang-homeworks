@@ -41,18 +41,18 @@ func TestCheckValid(t *testing.T) {
 }
 
 func TestAddRejectsInvalid(t *testing.T) {
-	Reset()
+	withDB(t)
 	if err := AddTransaction(Transaction{Amount: 100, Date: time.Now()}); !errors.Is(err, ErrEmptyCategory) {
 		t.Fatalf("want ErrEmptyCategory, got %v", err)
 	}
-	if got := len(ListTransactions()); got != 0 {
+	if got := len(mustList(t)); got != 0 {
 		t.Fatalf("invalid transaction stored, have %d", got)
 	}
 
 	if err := SetBudget(Budget{Category: "food", Limit: 0}); !errors.Is(err, ErrNonPositiveLimit) {
 		t.Fatalf("want ErrNonPositiveLimit, got %v", err)
 	}
-	if len(budgets) != 0 {
-		t.Fatalf("invalid budget stored: %v", budgets)
+	if got := mustBudgets(t); len(got) != 0 {
+		t.Fatalf("invalid budget stored: %v", got)
 	}
 }
