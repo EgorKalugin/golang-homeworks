@@ -1,10 +1,27 @@
 # Gateway
 
-Gateway is the HTTP API on `:8080`. It exposes the same endpoints as before
-(plus `GET /api/reports/summary`) and calls the `ledger` module directly
-(`replace ledger => ../ledger`). Ledger now stores data in PostgreSQL instead of
-memory, and caches reports in Redis. Gateway itself does not know about the
-cache, so caching is invisible to API clients.
+Gateway is the HTTP API on `:8080`. It uses the `ledger` module
+(`replace ledger => ../ledger`) only through the `service.Service` interface and
+the `app.New` factory; it does not import `database/sql`, pgx, Redis or
+`ledger/internal/repository/*`. Database and cache are invisible to it.
+
+## Initialization
+
+```go
+// main.go
+svc, closeFn, err := app.New(ctx) // Ledger reads env, connects and pings PostgreSQL, builds the service
+if err != nil {
+	log.Fatalf("gateway: cannot start ledger: %v", err)
+}
+defer closeFn()
+
+srv := &http.Server{Addr: ":8080", Handler: api.NewRouter(api.NewHandlers(svc))}
+```
+
+Handlers call `svc.SetBudget`, `svc.AddTransaction`, `svc.ReportSummary` and so on, and map
+errors to HTTP codes: `domain.IsValidationError` → `400`, `domain.ErrBudgetExceeded` → `409`,
+anything else → `500`. On `Ctrl+C`/`SIGTERM` the server shuts down gracefully and `closeFn`
+releases the connections.
 
 ## Run
 
@@ -19,7 +36,8 @@ go run .
 ```
 
 On start it logs `ledger: connected to PostgreSQL`, `ledger: connected to Redis ...`
-and `Gateway service started on :8080`. Data survives a Gateway/Ledger restart.
+and `Gateway service started on :8080`. If PostgreSQL is unreachable it logs
+`gateway: cannot start ledger: ...` and exits with code 1. Data survives a restart.
 
 ## Endpoints
 
@@ -72,9 +90,9 @@ Restart Gateway and repeat the `GET` requests: the data is still there.
 
 ## Tests
 
-`internal/api` tests use the same test database as Ledger (`TEST_DATABASE_URL`,
-default `cashapp_test`; Redis DB `TEST_REDIS_DB`, default `15`) and are skipped
-if it is unreachable. See [ledger/README.md](../ledger/README.md#tests).
+`internal/api` tests run the HTTP layer against the real service built by
+`app.NewInMemory()` (in-memory repositories), so they need no database. Storage
+is covered by the Ledger integration tests, see [ledger/README.md](../ledger/README.md#tests).
 
 ```
 cd gateway && go test ./... -cover

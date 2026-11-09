@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"ledger/app"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,8 +14,7 @@ import (
 
 func newTestRouter(t *testing.T) http.Handler {
 	t.Helper()
-	resetStorage(t)
-	return NewRouter(NewHandlers())
+	return NewRouter(NewHandlers(app.NewInMemory()))
 }
 
 func send(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {

@@ -4,19 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ledger/transactions"
+	"ledger/domain"
+	"ledger/service"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 )
 
 type Handlers struct {
-	mu sync.Mutex
+	svc service.Service
 }
 
-func NewHandlers() *Handlers {
-	return &Handlers{}
+func NewHandlers(svc service.Service) *Handlers {
+	return &Handlers{svc: svc}
 }
 
 func (h *Handlers) CreateTransaction(w http.ResponseWriter, r *http.Request) {
@@ -31,17 +31,13 @@ func (h *Handlers) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := tx.Validate(); err != nil {
+
+	created, err := h.svc.AddTransaction(r.Context(), tx)
+	switch {
+	case domain.IsValidationError(err):
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-
-	h.mu.Lock()
-	created, err := transactions.CreateTransaction(tx)
-	h.mu.Unlock()
-
-	switch {
-	case errors.Is(err, transactions.ErrBudgetExceeded):
+	case errors.Is(err, domain.ErrBudgetExceeded):
 		writeError(w, http.StatusConflict, "budget exceeded")
 		return
 	case err != nil:
@@ -54,7 +50,7 @@ func (h *Handlers) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ListTransactions(w http.ResponseWriter, r *http.Request) {
-	txs, err := transactions.ListTransactions()
+	txs, err := h.svc.ListTransactions(r.Context())
 	if err != nil {
 		log.Printf("list transactions: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -72,15 +68,12 @@ func (h *Handlers) CreateBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b := req.ToBudget()
-	if err := b.Validate(); err != nil {
+	err := h.svc.SetBudget(r.Context(), b)
+	switch {
+	case domain.IsValidationError(err):
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-
-	h.mu.Lock()
-	err := transactions.SetBudget(b)
-	h.mu.Unlock()
-	if err != nil {
+	case err != nil:
 		log.Printf("set budget: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -90,7 +83,7 @@ func (h *Handlers) CreateBudget(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ListBudgets(w http.ResponseWriter, r *http.Request) {
-	bs, err := transactions.ListBudgets()
+	bs, err := h.svc.ListBudgets(r.Context())
 	if err != nil {
 		log.Printf("list budgets: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -112,9 +105,9 @@ func (h *Handlers) ReportSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary, err := transactions.GetReportSummary(r.Context(), from, to)
+	summary, err := h.svc.ReportSummary(r.Context(), from, to)
 	switch {
-	case errors.Is(err, transactions.ErrInvalidPeriod):
+	case domain.IsValidationError(err):
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	case err != nil:

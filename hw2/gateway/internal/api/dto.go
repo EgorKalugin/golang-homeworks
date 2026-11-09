@@ -2,7 +2,7 @@ package api
 
 import (
 	"fmt"
-	"ledger/transactions"
+	"ledger/domain"
 	"time"
 )
 
@@ -49,8 +49,8 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func (r CreateTransactionRequest) ToTransaction() (transactions.Transaction, error) {
-	tx := transactions.Transaction{
+func (r CreateTransactionRequest) ToTransaction() (domain.Transaction, error) {
+	tx := domain.Transaction{
 		Amount:      r.Amount,
 		Category:    r.Category,
 		Description: r.Description,
@@ -58,14 +58,14 @@ func (r CreateTransactionRequest) ToTransaction() (transactions.Transaction, err
 	if r.Date != "" {
 		d, err := time.Parse(dateLayout, r.Date)
 		if err != nil {
-			return transactions.Transaction{}, fmt.Errorf("date must be in format YYYY-MM-DD, got %q", r.Date)
+			return domain.Transaction{}, fmt.Errorf("date must be in format YYYY-MM-DD, got %q", r.Date)
 		}
 		tx.Date = d
 	}
 	return tx, nil
 }
 
-func NewTransactionResponse(tx transactions.Transaction) TransactionResponse {
+func NewTransactionResponse(tx domain.Transaction) TransactionResponse {
 	return TransactionResponse{
 		ID:          tx.ID,
 		Amount:      tx.Amount,
@@ -75,7 +75,7 @@ func NewTransactionResponse(tx transactions.Transaction) TransactionResponse {
 	}
 }
 
-func NewTransactionResponses(txs []transactions.Transaction) []TransactionResponse {
+func NewTransactionResponses(txs []domain.Transaction) []TransactionResponse {
 	resp := make([]TransactionResponse, 0, len(txs))
 	for _, tx := range txs {
 		resp = append(resp, NewTransactionResponse(tx))
@@ -83,21 +83,21 @@ func NewTransactionResponses(txs []transactions.Transaction) []TransactionRespon
 	return resp
 }
 
-func (r CreateBudgetRequest) ToBudget() transactions.Budget {
-	return transactions.Budget{
+func (r CreateBudgetRequest) ToBudget() domain.Budget {
+	return domain.Budget{
 		Category: r.Category,
 		Limit:    r.Limit,
 	}
 }
 
-func NewBudgetResponse(b transactions.Budget) BudgetResponse {
+func NewBudgetResponse(b domain.Budget) BudgetResponse {
 	return BudgetResponse{
 		Category: b.Category,
 		Limit:    b.Limit,
 	}
 }
 
-func NewBudgetResponses(bs []transactions.Budget) []BudgetResponse {
+func NewBudgetResponses(bs []domain.Budget) []BudgetResponse {
 	resp := make([]BudgetResponse, 0, len(bs))
 	for _, b := range bs {
 		resp = append(resp, NewBudgetResponse(b))
@@ -105,7 +105,7 @@ func NewBudgetResponses(bs []transactions.Budget) []BudgetResponse {
 	return resp
 }
 
-func NewReportSummaryResponse(s transactions.ReportSummary) ReportSummaryResponse {
+func NewReportSummaryResponse(s domain.ReportSummary) ReportSummaryResponse {
 	resp := ReportSummaryResponse{
 		From:       s.From,
 		To:         s.To,

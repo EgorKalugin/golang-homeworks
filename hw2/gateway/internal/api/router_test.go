@@ -1,6 +1,7 @@
 package api
 
 import (
+	"ledger/app"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,8 +20,7 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 }
 
 func TestAPI(t *testing.T) {
-	resetStorage(t)
-	h := NewRouter(NewHandlers())
+	h := NewRouter(NewHandlers(app.NewInMemory()))
 
 	steps := []struct {
 		name       string

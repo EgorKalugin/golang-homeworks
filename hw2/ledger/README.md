@@ -1,8 +1,9 @@
 # Ledger
 
-Ledger holds the domain logic (validation, budgets, transactions, reports).
+Ledger holds the business logic (validation, budgets, transactions, reports).
 Data lives in **PostgreSQL**. Report results (and the budgets list) are cached
-in **Redis** for a short TTL. Gateway imports this module and calls it directly.
+in **Redis** for a short TTL. Gateway gets a ready service from `app.New` and
+works only through the `service.Service` interface.
 
 ## 1. Start PostgreSQL and Redis
 
@@ -70,30 +71,67 @@ warning and works without the cache.
 
 The pool is limited to 10 open / 5 idle connections, max lifetime 30 minutes.
 
+## Structure
+
+| Package | Layer | Contents |
+|---------|-------|----------|
+| `domain` | domain | `Transaction`, `Budget`, `CategoryTotal`, `ReportSummary`, `Validate()`, errors (`ErrBudgetExceeded`, `ErrInvalidPeriod`, ...), `IsValidationError`, repository interfaces `BudgetRepository` and `ExpenseRepository` |
+| `internal/repository/pg` | repository | `BudgetRepository`, `ExpenseRepository` on `*sql.DB` |
+| `internal/repository/cached` | repository | Redis decorators: `budgets:all` and `report:summary:<from>:<to>` (TTL 30s) |
+| `internal/repository/memory` | repository | in-memory implementation for tests |
+| `service` | service | `Service` interface and its implementation |
+| `app` | assembly | `ConfigFromEnv`, `New(ctx)`, `NewWithConfig(ctx, cfg)`, `NewInMemory()` |
+| `internal/db`, `internal/cache` | infrastructure | `sql.Open("pgx")` + pool + `Ping`; go-redis client |
+
+Repository interfaces (what the service needs, not how it is stored):
+
+```go
+type BudgetRepository interface {
+	Upsert(ctx, budgets ...Budget) error             // INSERT ... ON CONFLICT DO UPDATE, several in one tx
+	GetByCategory(ctx, category) (Budget, error)     // ErrBudgetNotFound if missing
+	List(ctx) ([]Budget, error)                      // ORDER BY category
+}
+type ExpenseRepository interface {
+	Add(ctx, tx Transaction) (Transaction, error)    // INSERT ... RETURNING id
+	List(ctx) ([]Transaction, error)                 // ORDER BY date DESC, id DESC
+	SumByCategory(ctx, category) (int, error)        // COALESCE(SUM(amount), 0)
+	TotalsByCategory(ctx, from, to) ([]CategoryTotal, error) // SUM ... GROUP BY category, for reports
+}
+```
+
+`service.Service`: `SetBudget`, `LoadBudgets` (JSON array, all or nothing), `ListBudgets`,
+`AddTransaction`, `ListTransactions`, `ReportSummary`. All methods take `context.Context`.
+
 ## How it works
 
-- `SetBudget` — `INSERT ... ON CONFLICT (category) DO UPDATE` (upsert), then `DEL budgets:all`.
-- `ListBudgets` — `budgets:all` from Redis (TTL 30s), otherwise `SELECT ... ORDER BY category`.
-- `AddTransaction` / `CreateTransaction` — `Validate()`, then read the category limit and
-  `SUM(amount)` already spent; if `spent + amount > limit` it returns `ErrBudgetExceeded`
-  and inserts nothing. Categories without a budget are not limited (same as before).
-  Otherwise `INSERT ... RETURNING id`; `CreateTransaction` returns the stored transaction with its ID.
-- `ListTransactions` — `SELECT ... ORDER BY date DESC, id DESC`.
-- `GetReportSummary(ctx, from, to)` — key `report:summary:<from>:<to>`. On a cache hit the
-  JSON from Redis is returned. On a miss it runs `SUM(amount) GROUP BY category` for the
-  period and stores the result for 30 seconds. A new transaction therefore shows up in
-  a cached report after the TTL expires (at most 30s).
+- `SetBudget` — `Validate()`, then `Upsert`; the cache decorator drops `budgets:all`.
+- `AddTransaction` — `Validate()`, then the budget rule: `GetByCategory` + `SumByCategory`;
+  if `spent + amount > limit` it returns `ErrBudgetExceeded` and inserts nothing. Categories
+  without a budget are not limited. Otherwise `Add` returns the transaction with its ID.
+  The check and the insert run under a mutex in the service.
+- Validation errors are returned as is (e.g. `limit must be positive, got 0`), so callers can
+  show them; `domain.IsValidationError(err)` tells them apart from storage errors.
+- `ReportSummary(ctx, from, to)` — `ErrInvalidPeriod` if `from > to`, then `TotalsByCategory`
+  (cached in Redis for 30s, so a new transaction shows up in a cached report after at most 30s).
 
-Package layout: `internal/db` (DSN from env, `sql.Open("pgx", dsn)`, pool settings, `Ping`),
-`internal/cache` (go-redis v9 client, JSON get/set with TTL), `transactions` (domain and
-SQL; the `*sql.DB` is stored in a package variable for now).
+## Initialization
+
+```go
+svc, closeFn, err := app.New(ctx) // reads env, opens and pings PostgreSQL (with ctx), connects Redis
+if err != nil { log.Fatal(err) }  // e.g. PostgreSQL is unreachable
+defer closeFn()                   // closes Redis and the DB pool
+```
+
+`app.New` does not run migrations, apply them with Goose first. If Redis is unreachable,
+the service is built without the cache decorators.
 
 ## Tests
 
-Tests that touch storage use a **separate** database because `Reset()` truncates
-the tables: `TEST_DATABASE_URL` (default
-`postgres://postgres:postgres@localhost:5432/cashapp_test?sslmode=disable`) and Redis DB
-`TEST_REDIS_DB` (default `15`). If the test database is unreachable, those tests are skipped.
+- `domain` — validation; `service` — business rules on in-memory repositories (no DB needed).
+- `internal/repository/pg` and `app` — integration tests on PostgreSQL + Redis through the factory.
+  They use a **separate** database because they truncate the tables: `TEST_DATABASE_URL` (default
+  `postgres://postgres:postgres@localhost:5432/cashapp_test?sslmode=disable`) and Redis DB
+  `TEST_REDIS_DB` (default `15`). If the test database is unreachable, those tests are skipped.
 
 ```
 createdb -h localhost -U postgres cashapp_test   # or: docker exec cashcraft-pg createdb -U postgres cashapp_test

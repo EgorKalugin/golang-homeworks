@@ -1,7 +1,6 @@
-package transactions
+package domain
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -9,12 +8,6 @@ import (
 type Validatable interface {
 	Validate() error
 }
-
-var (
-	ErrEmptyCategory    = errors.New("category must not be empty")
-	ErrZeroDate         = errors.New("date must be set")
-	ErrNonPositiveLimit = errors.New("limit must be positive")
-)
 
 func CheckValid(v Validatable) error {
 	return v.Validate()
